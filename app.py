@@ -16,7 +16,7 @@ import torch.nn.functional as F # Import torch.nn.functional as F
 
 # Base directory and model directory for deployment (no Colab/Drive paths)
 BASE_DIR = os.path.dirname(__file__)
-MODELS_DIR = os.path.join(BASE_DIR, "models")
+output_path = os.path.join(BASE_DIR, "models")
 
 # Streamlit page configuration must be the first Streamlit call
 st.set_page_config(page_title="Bot Detection App", layout="wide")
@@ -30,7 +30,6 @@ else:
 st.session_state.device = device # Store device in session state for access across reruns
 
 # Output path for models and data (local models directory for deployment)
-output_path = MODELS_DIR
 if not os.path.exists(output_path):
     os.makedirs(output_path, exist_ok=True)
 

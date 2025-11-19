@@ -11,19 +11,15 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 import praw # For Reddit API
 import transformers # For BERT tokenizer and model
-from accelerate import Accelerator # For mixed precision
-from bs4 import BeautifulSoup # For scraping fallback, though not directly used in the final app due to scope
 from transformers import BertTokenizer, BertModel
-import psutil # For RAM usage monitoring
 import torch.nn.functional as F # Import torch.nn.functional as F
 
-# --- 1. Installation of Libraries (required for Streamlit run) ---
-# These commands will be executed when the app.py is run via !streamlit run
-# They are placed here so that the app.py file is self-contained for deployment.
-# Streamlit will automatically run `pip install` when it first starts in a new environment.
-# For Colab, it's usually done in a separate cell, but here we integrate for full app self-containment.
-# Note: For production, these should be in a requirements.txt
-# !pip install streamlit ngrok praw psaw numpy pandas torch transformers xgboost scikit-learn matplotlib Pillow opencv-python accelerate --quiet
+# Base directory and model directory for deployment (no Colab/Drive paths)
+BASE_DIR = os.path.dirname(__file__)
+MODELS_DIR = os.path.join(BASE_DIR, "models")
+
+# Streamlit page configuration must be the first Streamlit call
+st.set_page_config(page_title="Bot Detection App", layout="wide")
 
 # --- Configuration & Global Variables ---
 # Determine device (GPU if available, otherwise CPU)
@@ -33,11 +29,10 @@ else:
     device = torch.device('cpu')
 st.session_state.device = device # Store device in session state for access across reruns
 
-# Output path for models and data (assuming Google Drive mount)
-output_path = '/content/drive/MyDrive/Capstone Project New/models/'
+# Output path for models and data (local models directory for deployment)
+output_path = MODELS_DIR
 if not os.path.exists(output_path):
-    st.error(f"Output path not found: {output_path}. Please ensure Google Drive is mounted correctly and the path exists.")
-    st.stop()
+    os.makedirs(output_path, exist_ok=True)
 
 # Initialize BERT tokenizer and model globally, once
 @st.cache_resource
@@ -915,38 +910,7 @@ def fetch_reddit_data(username, reddit_api_instance, post_limit=100, comment_lim
         return None
 
 
-# --- NGrok Setup (for public sharing) ---
-@st.cache_resource
-def setup_ngrok():
-    try:
-        from pyngrok import ngrok
-        # Read NGROK_AUTH_TOKEN directly from os.environ
-        ngrok_auth_token = os.environ.get("NGROK_AUTH_TOKEN")
-
-        if ngrok_auth_token:
-            ngrok.set_auth_token(ngrok_auth_token)
-            public_url = ngrok.connect(8501).public_url
-            st.session_state.ngrok_url = public_url
-            st.success(f"Streamlit available publicly at: {public_url}")
-        else:
-            st.warning("ngrok authtoken not found in environment variables. Running locally.")
-            st.session_state.ngrok_url = None
-    except Exception as e:
-        st.warning(f"ngrok setup failed: {e}. Running locally.")
-        st.session_state.ngrok_url = None
-
-# Only run ngrok setup once
-if "ngrok_setup_done" not in st.session_state:
-    # Read NGROK_AUTH_TOKEN directly from os.environ
-    if os.environ.get("NGROK_AUTH_TOKEN"):
-        setup_ngrok()
-    else:
-        st.session_state.ngrok_url = None
-        st.warning("NGROK_AUTHTOKEN not found in environment variables. The app will run locally only.")
-    st.session_state.ngrok_setup_done = True
-
 # --- Streamlit UI ---
-st.set_page_config(layout="wide", page_title="Bot Detection App")
 
 st.title("🤖 Fake Information Detection Across Internet")
 st.markdown("---")
@@ -978,8 +942,7 @@ selected_model = st.selectbox("Select a Classification Model:", model_options)
 @st.cache_resource
 def get_common_model_params():
     # Placeholder for actual values, ensure they match training
-    # Need to load a dummy df to infer num_metadata_features correctly for certain models
-    _train_df_full_for_meta = pd.read_csv(os.path.join(output_path, 'train_normalized.csv'))
+    # Dynamically infer num_metadata_features without relying on external CSV files
 
     # Fix 2: Metadata columns for inference (must match what was used in training for GCN/TGN/XGBoost/CTPP-GNN)
     # These are the 9 columns that combined with CNN (64) + platform (2) = 75 total
@@ -1315,21 +1278,7 @@ if st.button("Classify Profile", key="classify_button"):
 st.markdown("---")
 st.write("Developed as part of a Capstone Project. Leveraging advanced ML/DL models for social media bot detection.")
 
-# --- System Metrics (RAM) in Sidebar ---
-@st.cache_data(ttl=1) # Cache for 1 second
-def get_system_metrics():
-    process = psutil.Process(os.getpid())
-    mem_info = process.memory_info()
-    return {
-        'ram_usage_mb': mem_info.rss / (1024 * 1024), # Resident Set Size
-        'ram_percent': psutil.virtual_memory().percent
-    }
-
-metrics = get_system_metrics()
-st.sidebar.subheader("System Usage")
-st.sidebar.write(f"RAM Usage: {metrics['ram_usage_mb']:.2f} MB ({metrics['ram_percent']}%) ")
-
-# Footer with GPU usage (optional, for debugging/monitoring in Colab)
+# Footer with GPU usage (optional, for debugging/monitoring)
 if torch.cuda.is_available():
     st.sidebar.subheader("GPU Usage")
     allocated = torch.cuda.memory_allocated(device) / 1024**2
